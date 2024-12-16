@@ -1,0 +1,7 @@
+credit_age,income,full_time,part_time,student,credit_approved
+30,40000,,,,0
+31,65000,1,,,1
+28,48000,,1,,0
+50,95000,1,,,1
+37,52000,,,,0
+41,68000,,1,,1
