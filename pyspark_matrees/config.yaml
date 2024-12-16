@@ -1,0 +1,47 @@
+experiment:
+  alias: NHANES_hypertension
+  seed: &seed 2024
+  test_size: 0.2
+  features: [
+    RIDAGEYR, RIAGENDR, SMQ020, SMD680, SMD415, SMD415A, PAD020, PAD200,
+    PAD320, DIQ010, BMXWT, BMXHT, BMXBMI, BMXWAIST, OHAROCDT, OHAROCGP,
+    OHARNF, ALQ120Q, BPQ020, DRXTTFAT, DRXTSFAT, BPXSY1, BPXDI1, LBXSAL,
+    LBXSGL, LBXSCH, LBXSUA, LBXSKSI, MCQ160C, MCQ080, OCQ180, OCQ380, DBD100,
+    OCD180, DR1TTFAT, DR1TSFAT, INDFMMPI, PAD645, PAD660, PAD675, SMD460,
+    SMDANY, BMXHIP, ALQ121, MCQ366C, BPXOSY1, BPXODI1
+  ]
+  target: HYPERT
+  evaluation_metrics: [accuracy, roc_auc_ovr]
+
+results:
+  root_dir: src/results
+
+data:
+  path: src/sample_data/NHANES_hypertension.train.csv
+
+model_selection: 
+  search: random  # exhaustive or random
+  n_iter: 10  # Only used for randomized search
+  score: roc_auc_ovr
+  n_splits: 3
+  test_size: 0.2
+  seed: *seed
+
+estimators:
+  sdt:
+    is_net_estimator: true
+    requires_missingness_mask: true
+    use_sample_weights: false
+    hparams:
+      estimator__max_depth: [3, 4, 5]
+      estimator__w1: [0.001, 0.01, 0.1]
+      estimator__w2: [0.001, 0.01, 0.1]
+      estimator__batch_size: [32, 64, 128]
+      estimator__optimizer__lr: [0.001, 0.01, 0.1]
+    
+  dt:
+    is_net_estimator: false
+    requires_missingness_mask: false
+    use_sample_weights: true
+    hparams:
+      estimator__min_samples_split: [0.05, 0.10, 0.15, 0.20, 0.25]

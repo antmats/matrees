@@ -13,7 +13,7 @@ def check_missingness_mask(M, X):
 
 
 def get_ensemble_missingness_reliance_from_df(df, X, M, equality_left=True):
-    """Compute the missingness reliance proportion for an ensemble model given 
+    """Compute the missingness reliance proportion for an ensemble model given
     a DataFrame containing the structure of the trees within the ensemble.
 
     Parameters:
@@ -79,8 +79,10 @@ def _tree_to_dataframe(tree, idx=0):
     node_ids = [f"{idx}-{i}" for i in range(n_nodes)]
     features = ["Leaf" if f == -2 else "f%d" % f for f in tree.feature]
     thresholds = tree.threshold
-    children_left  = [f"{idx}-{c}" % c if c > -1 else np.nan for c in tree.children_left]
-    children_right = [f"{idx}-{c}" % c if c > -1 else np.nan for c in tree.children_right]
+    children_left = [f"{idx}-{c}" % c if c > -1 else np.nan for c in tree.children_left]
+    children_right = [
+        f"{idx}-{c}" % c if c > -1 else np.nan for c in tree.children_right
+    ]
 
     return pd.DataFrame(
         {
@@ -98,7 +100,7 @@ def get_dt_missingness_reliance(dt, X, M):
     """Compute the fraction of rows in X for which a decision tree uses missing
     features.
 
-    Parameters: 
+    Parameters:
         dt (decision tree model): Model to evaluate
         X (ndarray or dataframe): Input data
         M (ndarray): Missingness mask

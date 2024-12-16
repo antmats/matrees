@@ -1,0 +1,46 @@
+version: '3.7'
+
+services:
+  spark-master:
+    build: .
+    image: custom-spark:latest
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+    volumes:
+      - ./:/opt/bitnami/spark/
+      # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
+      # - ./src/results:/opt/bitnami/spark/src/results
+
+  spark-worker-1:
+    build: .
+    image: custom-spark:latest
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ./:/opt/bitnami/spark/
+      # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
+      # - ./src/results:/opt/bitnami/spark/src/results
+
+  spark-worker-2:
+    build: .
+    image: custom-spark:latest
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ./:/opt/bitnami/spark/
+      # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
+      # - ./src/results:/opt/bitnami/spark/src/results
