@@ -9,7 +9,7 @@ services:
       - "9090:8080"
       - "7077:7077"
     volumes:
-      - ./:/opt/bitnami/spark/
+      - ./src:/opt/bitnami/spark/src
       # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
       # - ./src/results:/opt/bitnami/spark/src/results
 
@@ -25,7 +25,7 @@ services:
       SPARK_WORKER_MEMORY: 2g
       SPARK_MASTER_URL: spark://spark-master:7077
     volumes:
-      - ./:/opt/bitnami/spark/
+      - ./src:/opt/bitnami/spark/src
       # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
       # - ./src/results:/opt/bitnami/spark/src/results
 
@@ -41,6 +41,6 @@ services:
       SPARK_WORKER_MEMORY: 2g
       SPARK_MASTER_URL: spark://spark-master:7077
     volumes:
-      - ./:/opt/bitnami/spark/
+      - ./src:/opt/bitnami/spark/src
       # - ./src/sample_data:/opt/bitnami/spark/src/sample_data
       # - ./src/results:/opt/bitnami/spark/src/results
