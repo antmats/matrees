@@ -1,0 +1,15 @@
+name: matrees_env
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  - python=3.11
+  - matplotlib>=3.8.4,<3.9
+  - seaborn>=0.13.2,<0.14
+  - pandas>=2.2.3,<2.3
+  - numpy>=1.26.4,<1.27
+  - jupyterlab>=4.2.2,<4.3
+  - scikit-learn>=1.5.2,<1.6
+  - pyspark>=3.5.3,<4

@@ -1,0 +1,39 @@
+Bootstrap: docker
+
+From: continuumio/miniconda3:latest
+
+%files
+    environment.yml
+
+%post
+    /opt/conda/bin/conda env create -f environment.yml
+
+    echo "source activate matrees_env" >> ~/.bashrc
+
+    conda install --solver=classic conda-forge::conda-libmamba-solver conda-forge::libmamba conda-forge::libmambapy conda-forge::libarchive
+
+    conda install -c conda-forge openjdk=11 -y
+    #JAVA_HOME=/opt/conda
+    #JAVA_HOME=/opt/conda/envs/matrees_env
+
+    git clone https://github.com/antmats/spark.git
+    cd spark
+    git checkout v3.5.3-matrees
+
+    ./build/mvn clean install -DskipTests -Dscalastyle.skip=true
+
+    cd python
+    python setup.py sdist
+    /opt/conda/envs/matrees_env/bin/pip install dist/*.tar.gz
+
+%environment
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate matrees_env
+    
+    export JAVA_HOME=/opt/conda
+    export PATH=$JAVA_HOME/bin:$PATH
+
+    if [ -d "/mnt/matrees" ]
+    then
+        export PYTHONPATH="/mnt/matrees:${PYTHONPATH}"
+    fi
