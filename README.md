@@ -20,7 +20,7 @@ A brief description of Authors' Contributions
    - Set up the development pipeline with PySpark and Apache MLLib
    - Wrote the Pyspark implementations of MADTClassifier and MARFClassifier
    - Wrote shell scripts for running the experiments locally with Apache PySpark and Docker
-   - Brainstormed changing the Spark Scala source code, locally debugged and built Scala source code
+   - Brainstormed changing the Spark Scala source code, locally built and debugged Scala source code
    - Code organization to fit the experiment pipeline
    - Prepared the slides for the project pitch and project presentation
     
