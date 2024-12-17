@@ -232,6 +232,45 @@ class PySparkMADTClassifier(Classifier):
 
         recurse(self.tree_, 0)
 
+    def compute_missingness_reliance(self, dataset):
+        """
+        Compute the fraction of rows where missing features influence the decision path.
+
+        Args:
+            dataset (DataFrame): Input PySpark DataFrame with missingness masks.
+
+        Returns:
+            float: Proportion of rows influenced by missing features.
+        """
+        tree = self.tree_
+
+        def traverse_and_check_missing(row, node):
+            """Traverse the tree and check for missing feature reliance."""
+            if "Predict" in node:
+                return 0  # Leaf node, no missing feature reliance
+
+            # Extract decision condition
+            condition = node["If"]
+            feature = condition.split()[0]
+            threshold = float(condition.split()[2])
+
+            # Check if the feature is missing
+            is_missing = row.get(f"missing_{feature}", 0)  # Missingness mask column
+
+            # Traverse the next node
+            if row[feature] is not None and row[feature] <= threshold:
+                return is_missing or traverse_and_check_missing(row, node["Left"])
+            else:
+                return is_missing or traverse_and_check_missing(row, node["Right"])
+
+        # Count missing reliance over all rows
+        missing_reliance_count = dataset.rdd.map(
+            lambda row: traverse_and_check_missing(row.asDict(), tree)
+        ).sum()
+
+        total_rows = dataset.count()
+        return missing_reliance_count / total_rows if total_rows > 0 else 0
+
 
 class PySparkMARFClassifier:
     """Missingness-avoiding random forest classifier."""
@@ -328,6 +367,27 @@ class PySparkMARFClassifier:
             tree.print_tree()
             print("\n")
 
+    def compute_missingness_reliance(self, dataset):
+        """
+        Compute the fraction of rows where missing features influence the decision path
+        across all trees in the random forest.
+
+        Args:
+            dataset (DataFrame): Input PySpark DataFrame with missingness masks.
+
+        Returns:
+            float: Average missingness reliance over all trees.
+        """
+        # Compute missingness reliance for each tree
+        reliance_list = [
+            tree.compute_missingness_reliance(dataset) for tree in self.trees
+        ]
+
+        # Average the reliance values
+        if len(reliance_list) == 0:
+            return 0
+        return sum(reliance_list) / len(reliance_list)
+
 
 if __name__ == "__main__":
 
@@ -351,7 +411,7 @@ if __name__ == "__main__":
     # Define features and label
     features = ["credit_age", "income", "full_time", "part_time", "student"]
     label = "credit_approved"
-
+    alpha = 0.1
     # Add Missingness Mask and Impute Missing Values
     for feature in features:
         df = df.withColumn(
@@ -365,7 +425,7 @@ if __name__ == "__main__":
 
     # Train PySparkMADTClassifier
     madt = PySparkMADTClassifier(
-        criterion="gini", maxDepth=3, alpha=1.0, labelCol=label
+        criterion="gini", maxDepth=3, alpha=alpha, labelCol=label
     )
     madt._fit(df)
     print("Trained MADT Tree:")
@@ -374,11 +434,16 @@ if __name__ == "__main__":
     # Make Predictions
     predictions = madt.predict(df)
     print("MADT Predictions:", predictions)
+
+    # Compute missingness reliance for MADT
+    reliance = madt.compute_missingness_reliance(df)
+    print(f"Missingness reliance for MADT: {reliance:.4f}")
+
     madt.save("./src/models/madt_model")
 
     # Train PySparkMARFClassifier
     marf = PySparkMARFClassifier(
-        numTrees=3, criterion="gini", maxDepth=3, alpha=1.0, labelCol=label
+        numTrees=3, criterion="gini", maxDepth=3, alpha=alpha, labelCol=label
     )
     marf._fit(df)
     print("Trained MARF Forest:")
@@ -387,6 +452,11 @@ if __name__ == "__main__":
     # Make Predictions with MARF
     forest_predictions = marf.predict(df)
     print("MARF Predictions:", forest_predictions)
+
+    # Compute missingness reliance for MARF
+    forest_reliance = marf.compute_missingness_reliance(df)
+    print(f"Missingness reliance for MARF: {forest_reliance:.4f}")
+
     marf.save("./src/models/marf_model")
 
     spark.stop()
