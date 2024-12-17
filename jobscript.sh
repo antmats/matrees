@@ -15,10 +15,15 @@ cd ~
 rsync -r matrees $TMPDIR
 cd $TMPDIR/matrees
 
+if [ -z "$n_features" ]; then
+    n_features=20
+fi
+
 apptainer exec --bind "${TMPDIR}:/mnt" $container_path python main.py \
     --estimator_alias "$estimator_alias" \
     --n_train $n_train \
     --n_test $n_test \
+    --n_features $n_features \
     --max_depth $max_depth \
     --alpha $alpha \
     --seed $seed \
