@@ -25,4 +25,10 @@ A brief description of Authors' Contributions
    - Prepared the slides for the project pitch and project presentation
     
 - Anton
-   - 
+   -  Idea brainstorming of the solution approach for MA-Trees with Apache Spark
+   -  Wrote the Python implementations of MADTClassifier and MARFClassifier
+   -  Implemented the Scala Spark Decision Trees by changing the Spark Scala source code
+   -  Set up comparison experiment for the implementations
+   -  Set up experiment pipeline with synthetic data on Alvis
+   -  Code organization to fit the experiment pipeline
+   -  Prepared the slides for the project pitch and project presentation
