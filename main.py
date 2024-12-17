@@ -11,8 +11,10 @@ from sklearn.metrics import accuracy_score
 from pyspark.sql import SparkSession
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
+from pyspark.sql.functions import udf, col
+from pyspark.ml.linalg import DenseVector, VectorUDT
 
-from matrees.estimators import MADTClassifier, SparkMADTClassifier
+from matrees.estimators import MADTClassifier, PySparkMADTClassifier
 
 
 def get_datatset(
@@ -34,7 +36,8 @@ def get_datatset(
         random_state=seed,
     )
 
-    X = pd.DataFrame(X, columns=[f"x_{i}" for i in range(n_features)])
+    feature_columns = [f"x_{i}" for i in range(n_features)]
+    X = pd.DataFrame(X, columns=feature_columns)
     y = pd.Series(y, name="label")
     
     rng = np.random.default_rng(seed)
@@ -50,9 +53,17 @@ def get_datatset(
 
     X = X.mask(M)
 
-    M = pd.DataFrame(M, columns=[f"m_{i}" for i in range(n_features)])
+    missing_columns = [f"missing_{f}" for f in feature_columns]
+    M = pd.DataFrame(M, columns=missing_columns)
 
     return X, M, y
+
+
+def to_dense(vector):
+    return DenseVector(vector.toArray())
+
+
+to_dense_udf = udf(to_dense, VectorUDT())
 
 
 if __name__ == "__main__":
@@ -116,39 +127,19 @@ if __name__ == "__main__":
 
         df_train = spark.createDataFrame(df_train)
         df_test = spark.createDataFrame(df_test)
-        
-        assembler = VectorAssembler(
-            inputCols=X.columns.tolist(), outputCol="features"
-        )
-        df_train = assembler.transform(df_train)
-        df_test = assembler.transform(df_test)
 
-        #estimator = SparkMADTClassifier(
-        #    maxDepth=args.max_depth,
-        #    alpha=args.alpha,
-        #    seed=args.seed,
-        #    featuresCol="features",
-        #    labelCol="target",
-        #    predictionCol="prediction",
-        #    probabilityCol="probability",
-        #    rawPredictionCol="rawPrediction",
-        #)
-        estimator = DecisionTreeClassifier(
+        estimator = PySparkMADTClassifier(
+            criterion="gini",
             maxDepth=args.max_depth,
-            seed=args.seed,
-            featuresCol="features",
+            alpha=args.alpha,
             labelCol="label",
-            predictionCol="prediction",
-            probabilityCol="probability",
-            rawPredictionCol="rawPrediction",
         )
 
         start_time = time.time()
-        estimator = estimator.fit(df_train)
+        estimator._fit(df_train)
         end_time = time.time()
 
-        test_predictions = estimator.transform(df_test) \
-            .select("prediction").rdd.flatMap(lambda x: x).collect()
+        test_predictions = estimator.predict(df_test)
 
         spark.stop()
 
@@ -177,16 +168,23 @@ if __name__ == "__main__":
         df_test = assembler1.transform(df_test)
 
         estimator = DecisionTreeClassifier(
+            impurity="gini",
             maxDepth=args.max_depth,
             seed=args.seed,
             featuresCol="features",
-            labelCol="target",
+            labelCol="label",
             missingnessCol="missing",
             alpha=args.alpha,
-            predictionCol="prediction",
-            probabilityCol="probability",
-            rawPredictionCol="rawPrediction",
         )
+
+        start_time = time.time()
+        estimator = estimator.fit(df_train)
+        end_time = time.time()
+
+        test_predictions = estimator.transform(df_test) \
+            .select("prediction").rdd.flatMap(lambda x: x).collect()
+
+        spark.stop()
 
     training_time = end_time - start_time
 
