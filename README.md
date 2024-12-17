@@ -1,6 +1,7 @@
 # Project title: Scalable Missingess-Avoiding Decision Trees
- - Newton Mwai Kinyanjui, Data Science and AI Division, Computer Science and Engineering Department, Chalmers University of Technology
- - Anton Mattson, Data Science and AI Division, Computer Science and Engineering Department, Chalmers University of Technology
+ 1. Newton Mwai Kinyanjui, Data Science and AI Division, CSE Department, Chalmers University of Technology
+ 2. Anton Mattson, Data Science and AI Division, CSE Department, Chalmers University of Technology
+   
 ## Brief description of the project
 
 This project focuses on developing decision trees that avoid relying on missing values during prediction tasks, which is particularly important for safety-critical and interpretable machine learning (ML) applications like healthcare. Missing values often complicate model deployment in prediction tasks, and traditional imputation methods can undermine interpretability.
