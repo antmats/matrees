@@ -399,7 +399,7 @@ def entropy(positive, total):
     )
 
 
-class SparkMADTClassifier(Classifier):
+class PySparkMADTClassifier(Classifier):
     """Missingness-avoiding decision tree classifier."""
 
     def __init__(
@@ -410,7 +410,7 @@ class SparkMADTClassifier(Classifier):
         seed=None,
         labelCol="credit_approved",
     ):
-        super(MADTClassifier, self).__init__()
+        super(PySparkMADTClassifier, self).__init__()
         self.criterion = criterion
         self.maxDepth = maxDepth
         self.alpha = alpha
@@ -418,7 +418,7 @@ class SparkMADTClassifier(Classifier):
         self.labelCol = labelCol
 
     def _fit(self, dataset):
-        """Fit the classifier."""
+        """Fit the PySparkMADTClassifier."""
         # Add default sample weights if not already present
         if "sample_weight" not in dataset.columns:
             dataset = dataset.withColumn("sample_weight", lit(1.0))
@@ -555,6 +555,39 @@ class SparkMADTClassifier(Classifier):
                 ) / 2
 
         return best_score, best_threshold
+
+    def predict(self, dataset):
+        """Predict using the trained tree."""
+
+        def traverse_tree(row, node):
+            if "Predict" in node:
+                return node["Predict"]
+            condition = node["If"]
+            feature = condition.split()[0]
+            operator = condition.split()[1]
+            threshold = float(condition.split()[2])
+
+            if operator == "<=":
+                if row[feature] <= threshold:
+                    return traverse_tree(row, node["Left"])
+                else:
+                    return traverse_tree(row, node["Right"])
+            elif operator == ">":
+                if row[feature] > threshold:
+                    return traverse_tree(row, node["Right"])
+                else:
+                    return traverse_tree(row, node["Left"])
+
+        return dataset.rdd.map(
+            lambda row: traverse_tree(row.asDict(), self.tree_)
+        ).collect()
+
+    def save(self, path):
+        """Save the trained model."""
+        import json
+
+        with open(path, "w") as f:
+            json.dump(self.tree_, f)
 
     def print_tree(self):
         """Pretty print the decision tree."""
