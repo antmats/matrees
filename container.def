@@ -10,11 +10,13 @@ From: continuumio/miniconda3:latest
 
     echo "source activate matrees_env" >> ~/.bashrc
 
-    conda install --solver=classic conda-forge::conda-libmamba-solver conda-forge::libmamba conda-forge::libmambapy conda-forge::libarchive
+    #conda install --solver=classic \
+    #    conda-forge::conda-libmamba-solver \
+    #    conda-forge::libmamba \
+    #    conda-forge::libmambapy \
+    #    conda-forge::libarchive
 
     conda install -c conda-forge openjdk=11 -y
-    #JAVA_HOME=/opt/conda
-    #JAVA_HOME=/opt/conda/envs/matrees_env
 
     git clone https://github.com/antmats/spark.git
     cd spark
@@ -27,9 +29,6 @@ From: continuumio/miniconda3:latest
     /opt/conda/envs/matrees_env/bin/pip install dist/*.tar.gz
 
 %environment
-    source /opt/conda/etc/profile.d/conda.sh
-    conda activate matrees_env
-    
     export JAVA_HOME=/opt/conda
     export PATH=$JAVA_HOME/bin:$PATH
 
@@ -37,3 +36,6 @@ From: continuumio/miniconda3:latest
     then
         export PYTHONPATH="/mnt/matrees:${PYTHONPATH}"
     fi
+
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate matrees_env
