@@ -192,9 +192,10 @@ if __name__ == "__main__":
 
     results = pd.Series(
         {
+            "estimator_alias": args.estimator_alias,
             "n_train": args.n_train,
             "n_test": args.n_test,
-            "estimator_alias": args.estimator_alias,
+            "n_features": args.n_features,
             "max_depth": args.max_depth,
             "alpha": args.alpha,
             "seed": args.seed,
