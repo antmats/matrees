@@ -2,9 +2,11 @@ from abc import ABCMeta, abstractmethod
 from numbers import Integral, Real
 from warnings import warn
 
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lit, when, sum as spark_sum, mean, asc
+import json
 import numpy as np
-from pyspark.ml.classification import Classifier
-from pyspark.sql.functions import col, lit
+
 
 from sklearn.base import (
     BaseEstimator,
@@ -104,9 +106,7 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
             self._compute_missingness_reliance_for_all_nodes(self.root_, clear_X_M)
 
         n_classes = self.n_classes_ if is_classifier(self) else 1
-        self.tree_ = convert_to_sklearn_tree(
-            self.root_, self.n_features_in_, n_classes
-        )
+        self.tree_ = convert_to_sklearn_tree(self.root_, self.n_features_in_, n_classes)
 
         return self
 
@@ -149,9 +149,8 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
 
         # Check if the training set is completely homogeneous, or if the
         # maximum depth has been reached.
-        if (
-            depth >= self.max_depth
-            or self._is_homogeneous(node_value, y, sample_weight)
+        if depth >= self.max_depth or self._is_homogeneous(
+            node_value, y, sample_weight
         ):
             return TreeNode(
                 node_value,
@@ -165,9 +164,7 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
         features = np.arange(n_features)
         random_state.shuffle(features)
         _split_score, split_feature, split_threshold = max(
-            self._get_split_candidates(
-                X, y, M, sample_weight, depth, random_state
-            ),
+            self._get_split_candidates(X, y, M, sample_weight, depth, random_state),
         )
         self._split_features.append(split_feature)
 
@@ -185,8 +182,8 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
             X, y, M, sample_weight, split_feature, split_threshold
         )
 
-        left_subtree = self._make_tree(*data_left, depth+1, random_state)
-        right_subtree = self._make_tree(*data_right, depth+1, random_state)
+        left_subtree = self._make_tree(*data_left, depth + 1, random_state)
+        right_subtree = self._make_tree(*data_right, depth + 1, random_state)
 
         if M is not None:
             # Store the training data and the missingness mask in the nodes to
@@ -267,9 +264,7 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
         features = np.arange(n_features)
         random_state.shuffle(features)
         for feature in features:
-            yield self._best_split(
-                X, y, feature, sample_weight=sample_weight, M=M
-            )
+            yield self._best_split(X, y, feature, sample_weight=sample_weight, M=M)
 
     @abstractmethod
     def _get_node_value(self, y, sample_weight):
@@ -292,13 +287,7 @@ class MADTClassifier(ClassifierMixin, BaseMADT):
         "criterion": [StrOptions({"info_gain", "gini"})],
     }
 
-    def __init__(
-        self,
-        criterion="gini",
-        max_depth=3,
-        random_state=None,
-        alpha=1.0
-    ):
+    def __init__(self, criterion="gini", max_depth=3, random_state=None, alpha=1.0):
         super().__init__(max_depth, random_state, alpha)
         self.criterion = criterion
 
@@ -356,7 +345,7 @@ class MADTClassifier(ClassifierMixin, BaseMADT):
 
             # If the input is equal to the input at the next position, we will
             # not consider a split here.
-            if np.isclose(X_sorted[i], X_sorted[i+1]):
+            if np.isclose(X_sorted[i], X_sorted[i + 1]):
                 continue
 
             criterion_function = CRITERIA_CLF[self.criterion]
@@ -372,9 +361,7 @@ class MADTClassifier(ClassifierMixin, BaseMADT):
         if M is not None:
             max_score -= self.alpha * np.mean(sample_weight * M[:, feature])
 
-        split_threshold = (
-            0.5 * (X_sorted[i_max_score] + X_sorted[i_max_score + 1])
-        )
+        split_threshold = 0.5 * (X_sorted[i_max_score] + X_sorted[i_max_score + 1])
         return max_score, feature, split_threshold
 
 
@@ -388,75 +375,53 @@ def gini_impurity(positive, total):
     return 1 - prob_positive**2 - prob_negative**2
 
 
-def entropy(positive, total):
-    """Calculate entropy."""
-    if total == 0 or positive == 0 or positive == total:
-        return 0
-    prob_positive = positive / total
-    prob_negative = 1 - prob_positive
-    return -(
-        prob_positive * np.log2(prob_positive) + prob_negative * np.log2(prob_negative)
-    )
-
-
-class PySparkMADTClassifier(Classifier):
+class PySparkMADTClassifier:
     """Missingness-avoiding decision tree classifier."""
 
-    def __init__(
-        self,
-        criterion="gini",
-        maxDepth=3,
-        alpha=1.0,
-        seed=None,
-        labelCol="credit_approved",
-    ):
-        super(PySparkMADTClassifier, self).__init__()
+    def __init__(self, criterion="gini", maxDepth=3, alpha=1.0, labelCol="label"):
         self.criterion = criterion
         self.maxDepth = maxDepth
         self.alpha = alpha
-        self.seed = seed
         self.labelCol = labelCol
+        self.tree_ = None
 
     def _fit(self, dataset):
-        """Fit the PySparkMADTClassifier."""
-        # Add default sample weights if not already present
+        """Fit the decision tree on the dataset."""
         if "sample_weight" not in dataset.columns:
             dataset = dataset.withColumn("sample_weight", lit(1.0))
-
-        # Initialize tree
         self.tree_ = self._build_tree(dataset, depth=0)
 
     def _build_tree(self, dataset, depth):
         """Recursively build the decision tree."""
-        label_col = self.labelCol
-
-        # Stop conditions
         if depth >= self.maxDepth or dataset.count() == 0:
             return self._get_leaf(dataset)
 
-        # Check if node is homogeneous
-        label_counts = dataset.groupBy(label_col).count().collect()
+        # Check for homogeneity
+        label_counts = (
+            dataset.groupBy(self.labelCol)
+            .agg(spark_sum("sample_weight").alias("weight"))
+            .collect()
+        )
         if len(label_counts) == 1:
-            return {"Predict": label_counts[0][label_col]}
+            return {"Predict": label_counts[0][self.labelCol]}
 
-        # Find the best split
+        # Find the best split using histogram bins
         best_feature, best_threshold, best_score = None, None, float("-inf")
         for feature in dataset.columns:
-            if (
-                feature != label_col
-                and feature != "sample_weight"
-                and not feature.startswith("missing_")
-            ):
-                score, threshold = self._best_split(dataset, feature, label_col)
-                if score > best_score:
+            if feature not in [
+                self.labelCol,
+                "sample_weight",
+            ] and not feature.startswith("missing_"):
+                score, threshold = self._best_split(dataset, feature)
+                if score is not None and score > best_score:
                     best_feature, best_threshold, best_score = feature, threshold, score
 
         if best_feature is None:
             return self._get_leaf(dataset)
 
         # Split the dataset
-        left_data = dataset.filter(col(best_feature) <= lit(best_threshold))
-        right_data = dataset.filter(col(best_feature) > lit(best_threshold))
+        left_data = dataset.filter(col(best_feature) <= best_threshold)
+        right_data = dataset.filter(col(best_feature) > best_threshold)
 
         return {
             "If": f"{best_feature} <= {best_threshold}",
@@ -465,62 +430,41 @@ class PySparkMADTClassifier(Classifier):
             "Right": self._build_tree(right_data, depth + 1),
         }
 
-    def _get_leaf(self, dataset):
-        """Get the prediction for a leaf node."""
-        if dataset.count() == 0:
-            return {"Predict": None}
+    def _best_split(self, dataset, feature):
+        """Find the best split for a feature using histogram bins."""
+        # Missing data penalty
+        missing_penalty = (
+            dataset.filter(col(f"missing_{feature}") == 1)
+            .agg(spark_sum("sample_weight"))
+            .collect()[0][0]
+            or 0
+        ) * self.alpha
 
-        label_col = self.labelCol
-        prediction = (
-            dataset.groupBy(label_col)
-            .count()
-            .orderBy("count", ascending=False)
-            .first()[label_col]
-        )
-        return {"Predict": prediction}
-
-    def _best_split(self, dataset, feature, label_col):
-        """Find the best split for a feature, including missingness penalty."""
-        # Collect data sorted by feature
-        sorted_data = (
-            dataset.select(feature, label_col, "sample_weight")
-            .filter(col(feature).isNotNull())
-            .orderBy(feature)
-            .collect()
-        )
-
-        if not sorted_data:
-            return float("-inf"), None
-
-        # Compute penalties for missing data using the missingness mask
-        missing_feature_col = f"missing_{feature}"
-        if missing_feature_col in dataset.columns:
-            missing_penalty = (
-                dataset.select(missing_feature_col, "sample_weight")
-                .rdd.map(lambda row: row[missing_feature_col] * row["sample_weight"])
-                .sum()
-                * self.alpha
+        # Create histogram bins
+        histogram = (
+            dataset.groupBy(feature)
+            .agg(
+                spark_sum("sample_weight").alias("total_weight"),
+                spark_sum(
+                    when(col(self.labelCol) == 1, col("sample_weight")).otherwise(0)
+                ).alias("positive_weight"),
             )
-        else:
-            missing_penalty = 0
+            .orderBy(asc(feature))
+        ).collect()
 
-        # Aggregate weights and labels for computing split criteria
-        total_weight = sum(row["sample_weight"] for row in sorted_data)
-        total_positive = sum(
-            row["sample_weight"] for row in sorted_data if row[label_col] == 1
-        )
+        if len(histogram) < 2:
+            return None, None
 
-        best_score = float("-inf")
-        best_threshold = None
+        # Initialize cumulative sums
+        total_weight = sum(row["total_weight"] for row in histogram)
+        total_positive = sum(row["positive_weight"] for row in histogram)
 
-        weight_left = 0
-        positive_left = 0
+        weight_left, positive_left = 0, 0
+        best_score, best_threshold = float("-inf"), None
 
-        for i in range(len(sorted_data) - 1):
-            weight_left += sorted_data[i]["sample_weight"]
-            positive_left += (
-                sorted_data[i]["sample_weight"] if sorted_data[i][label_col] == 1 else 0
-            )
+        for i in range(len(histogram) - 1):  # Iterate through bin boundaries
+            weight_left += histogram[i]["total_weight"]
+            positive_left += histogram[i]["positive_weight"]
 
             weight_right = total_weight - weight_left
             positive_right = total_positive - positive_left
@@ -528,69 +472,80 @@ class PySparkMADTClassifier(Classifier):
             if weight_left == 0 or weight_right == 0:
                 continue
 
-            if self.criterion == "gini":
-                gini_left = gini_impurity(positive_left, weight_left)
-                gini_right = gini_impurity(positive_right, weight_right)
-                score = -(
+            # Calculate Gini impurity for left and right splits
+            gini_left = gini_impurity(positive_left, weight_left)
+            gini_right = gini_impurity(positive_right, weight_right)
+
+            # Weighted Gini score
+            gini_score = (
+                -(
                     (weight_left / total_weight) * gini_left
                     + (weight_right / total_weight) * gini_right
                 )
-            elif self.criterion == "entropy":
-                entropy_left = entropy(positive_left, weight_left)
-                entropy_right = entropy(positive_right, weight_right)
-                score = -(
-                    (weight_left / total_weight) * entropy_left
-                    + (weight_right / total_weight) * entropy_right
-                )
-            else:
-                raise ValueError("Unsupported criterion")
+                - missing_penalty
+            )
 
-            # Add missingness penalty
-            score -= missing_penalty
-
-            if score > best_score:
-                best_score = score
-                best_threshold = (
-                    sorted_data[i][feature] + sorted_data[i + 1][feature]
-                ) / 2
+            # Update the best score and threshold
+            if gini_score > best_score:
+                best_score = gini_score
+                best_threshold = (histogram[i][feature] + histogram[i + 1][feature]) / 2
 
         return best_score, best_threshold
 
+    def _get_leaf(self, dataset):
+        """Return the majority class at a leaf node."""
+        result = (
+            dataset.groupBy(self.labelCol)
+            .agg(spark_sum("sample_weight").alias("weight"))
+            .orderBy("weight", ascending=False)
+            .first()
+        )
+        return {"Predict": result[self.labelCol]} if result else {"Predict": None}
+
     def predict(self, dataset):
-        """Predict using the trained tree."""
+        """Predict using the trained decision tree."""
 
         def traverse_tree(row, node):
             if "Predict" in node:
                 return node["Predict"]
-            condition = node["If"]
-            feature = condition.split()[0]
-            operator = condition.split()[1]
-            threshold = float(condition.split()[2])
-
-            if operator == "<=":
-                if row[feature] <= threshold:
-                    return traverse_tree(row, node["Left"])
-                else:
-                    return traverse_tree(row, node["Right"])
-            elif operator == ">":
-                if row[feature] > threshold:
-                    return traverse_tree(row, node["Right"])
-                else:
-                    return traverse_tree(row, node["Left"])
+            feature, operator, threshold = node["If"].split()
+            threshold = float(threshold)
+            if row[feature] <= threshold:
+                return traverse_tree(row, node["Left"])
+            else:
+                return traverse_tree(row, node["Right"])
 
         return dataset.rdd.map(
             lambda row: traverse_tree(row.asDict(), self.tree_)
         ).collect()
 
+    def compute_missingness_reliance(self, dataset):
+        """Compute the proportion of rows influenced by missing features."""
+
+        def traverse_and_check_missing(row, node):
+            if "Predict" in node:
+                return 0
+            feature = node["If"].split()[0]
+            is_missing = row.get(f"missing_{feature}", 0)
+            if row[feature] is not None:
+                if row[feature] <= float(node["If"].split()[2]):
+                    return is_missing or traverse_and_check_missing(row, node["Left"])
+                else:
+                    return is_missing or traverse_and_check_missing(row, node["Right"])
+            return is_missing
+
+        missing_reliance_count = dataset.rdd.map(
+            lambda row: traverse_and_check_missing(row.asDict(), self.tree_)
+        ).sum()
+        return missing_reliance_count / dataset.count()
+
     def save(self, path):
         """Save the trained model."""
-        import json
-
         with open(path, "w") as f:
             json.dump(self.tree_, f)
 
     def print_tree(self):
-        """Pretty print the decision tree."""
+        """Pretty-print the decision tree."""
 
         def recurse(node, depth):
             indent = "  " * depth
@@ -599,7 +554,71 @@ class PySparkMADTClassifier(Classifier):
             else:
                 print(f"{indent}If ({node['If']})")
                 recurse(node["Left"], depth + 1)
-                print(f"{indent}Else ({node['Else']})")
+                print(f"{indent}Else")
                 recurse(node["Right"], depth + 1)
 
         recurse(self.tree_, 0)
+
+
+class PySparkMARFClassifier:
+    """Missingness-avoiding random forest classifier."""
+
+    def __init__(
+        self,
+        numTrees=100,
+        maxDepth=10,
+        alpha=1.0,
+        bootstrap=True,
+        seed=None,
+        criterion="gini",
+        labelCol="label",
+    ):
+        self.numTrees = numTrees
+        self.maxDepth = maxDepth
+        self.alpha = alpha
+        self.bootstrap = bootstrap
+        self.seed = seed
+        self.labelCol = labelCol
+        self.criterion = criterion
+        self.trees = []
+
+    def _fit(self, dataset):
+        """Fit the Random Forest."""
+        self.trees = []
+        for i in range(self.numTrees):
+            sample = dataset.sample(
+                withReplacement=self.bootstrap, fraction=1.0, seed=self.seed
+            )
+            tree = PySparkMADTClassifier(
+                maxDepth=self.maxDepth,
+                criterion=self.criterion,
+                alpha=self.alpha,
+                labelCol=self.labelCol,
+            )
+            tree._fit(sample)
+            self.trees.append(tree)
+
+    def predict(self, dataset):
+        """Predict using majority voting from all trees."""
+        predictions = [tree.predict(dataset) for tree in self.trees]
+        final_predictions = [
+            max(set(preds), key=preds.count) for preds in zip(*predictions)
+        ]
+        return final_predictions
+
+    def compute_missingness_reliance(self, dataset):
+        """Compute average missingness reliance across all trees."""
+        reliance = [tree.compute_missingness_reliance(dataset) for tree in self.trees]
+        return sum(reliance) / len(reliance)
+
+    def print_forest(self):
+        """Print all decision trees in the forest."""
+        for i, tree in enumerate(self.trees):
+            print(f"Tree {i + 1}:")
+            tree.print_tree()
+            print("\n")
+
+    def save(self, path):
+        """Save the Random Forest model."""
+        with open(path, "w") as f:
+            json.dump([tree.tree_ for tree in self.trees], f)

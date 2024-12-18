@@ -39,14 +39,12 @@ def get_datatset(
     feature_columns = [f"x_{i}" for i in range(n_features)]
     X = pd.DataFrame(X, columns=feature_columns)
     y = pd.Series(y, name="label")
-    
+
     rng = np.random.default_rng(seed)
 
     M = np.zeros_like(X, dtype=bool)
 
-    missingness = rng.uniform(
-        missingness_low, missingness_high, n_features
-    )
+    missingness = rng.uniform(missingness_low, missingness_high, n_features)
 
     for i, m in enumerate(missingness):
         M[:, i] = rng.uniform(0, 1, n_samples) < m
@@ -100,7 +98,7 @@ if __name__ == "__main__":
     if args.estimator_alias == "madt":
         X_train = X_train.to_numpy()
         X_test = X_test.to_numpy()
-        
+
         M_train = M_train.to_numpy()
         M_test = M_test.to_numpy()
 
@@ -120,10 +118,11 @@ if __name__ == "__main__":
         df_train = pd.concat([X_train, M_train, y_train], axis=1)
         df_test = pd.concat([X_test, M_test, y_test], axis=1)
 
-        spark = SparkSession.builder \
-            .appName("DecisionTreeModel") \
-            .master("local[*]") \
+        spark = (
+            SparkSession.builder.appName("DecisionTreeModel")
+            .master("local[*]")
             .getOrCreate()
+        )
 
         df_train = spark.createDataFrame(df_train)
         df_test = spark.createDataFrame(df_test)
@@ -147,20 +146,17 @@ if __name__ == "__main__":
         df_train = pd.concat([X_train, M_train, y_train], axis=1)
         df_test = pd.concat([X_test, M_test, y_test], axis=1)
 
-        spark = SparkSession.builder \
-            .appName("DecisionTreeModel") \
-            .master("local[*]") \
+        spark = (
+            SparkSession.builder.appName("DecisionTreeModel")
+            .master("local[*]")
             .getOrCreate()
+        )
 
         df_train = spark.createDataFrame(df_train)
         df_test = spark.createDataFrame(df_test)
 
-        assembler1 = VectorAssembler(
-            inputCols=X.columns.tolist(), outputCol="features"
-        )
-        assembler2 = VectorAssembler(
-            inputCols=M.columns.tolist(), outputCol="missing"
-        )
+        assembler1 = VectorAssembler(inputCols=X.columns.tolist(), outputCol="features")
+        assembler2 = VectorAssembler(inputCols=M.columns.tolist(), outputCol="missing")
 
         df_train = assembler1.transform(df_train)
         df_train = assembler2.transform(df_train)
@@ -181,8 +177,12 @@ if __name__ == "__main__":
         estimator = estimator.fit(df_train)
         end_time = time.time()
 
-        test_predictions = estimator.transform(df_test) \
-            .select("prediction").rdd.flatMap(lambda x: x).collect()
+        test_predictions = (
+            estimator.transform(df_test)
+            .select("prediction")
+            .rdd.flatMap(lambda x: x)
+            .collect()
+        )
 
         spark.stop()
 
@@ -203,10 +203,10 @@ if __name__ == "__main__":
             "accuracy": accuracy,
         }
     )
-    
+
     if args.task_id is None:
         output_file = f"results_{args.estimator_alias}.csv"
     else:
         output_file = f"{args.task_id:02d}_results_{args.estimator_alias}.csv"
-    
+
     results.to_csv(join(args.output_dir, output_file), header=False)
