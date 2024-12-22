@@ -222,7 +222,7 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
         if node is None:
             return
         node.missingness_reliance = self.compute_missingness_reliance(
-            node.X, node.M, max_depth=node.depth
+            node.X, node.M, max_depth=node.depth, check_input=False,
         )
         if clear_X_M:
             del node.X
@@ -237,8 +237,12 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
         sample_mask=None,
         reduce=True,
         max_depth=None,
+        check_input=True,
     ):
         check_is_fitted(self)
+        if check_input:
+            X = self._validate_X_predict(X)
+            M = check_missingness_mask(M, X, allow_none=False)
         miss_reliance = np.zeros_like(M)
         for i, (x, m) in enumerate(zip(X, M)):
             if sample_mask is not None and not sample_mask[i]:

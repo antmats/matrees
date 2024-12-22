@@ -3,8 +3,8 @@ import pandas as pd
 from sklearn.utils.validation import check_array
 
 
-def check_missingness_mask(M, X):
-    if M is None:
+def check_missingness_mask(M, X, allow_none=True):
+    if M is None and allow_none:
         return None
     M = check_array(M)
     if not M.shape[0] == X.shape[0]:
