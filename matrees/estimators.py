@@ -1,12 +1,11 @@
+import json
 from abc import ABCMeta, abstractmethod
 from numbers import Integral, Real
 from warnings import warn
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit, when, sum as spark_sum, mean, asc
-import json
 import numpy as np
-
 
 from sklearn.base import (
     BaseEstimator,
@@ -28,14 +27,6 @@ from .tree import *
 from .missingness_utils import check_missingness_mask
 
 CRITERIA_CLF = {"info_gain": info_gain_scorer, "gini": gini_scorer}
-
-
-def get_estimator(estimator_alias):
-    if estimator_alias == "madt":
-        return MADTClassifier().set_fit_request(M=True, sample_weight=True)
-    elif estimator_alias == "spark_madt":
-        return SparkMADTClassifier().set_fit_request(M=True, sample_weight=True)
-    raise ValueError(f"Unknown estimator alias: {estimator_alias}")
 
 
 class BaseMADT(BaseEstimator, metaclass=ABCMeta):
@@ -130,7 +121,7 @@ class BaseMADT(BaseEstimator, metaclass=ABCMeta):
     def predict(self, X, check_input=True, return_proba=False):
         check_is_fitted(self)
         if check_input:
-            self._validate_X_predict(X)
+            X = self._validate_X_predict(X)
         yp = np.array([self._predict_one(x) for x in X])
         if is_classifier(self) and not return_proba:
             # Classes are ordered from 0 to n_classes-1.
