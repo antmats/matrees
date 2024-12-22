@@ -16,6 +16,10 @@ from pyspark.ml.linalg import DenseVector, VectorUDT
 
 from matrees.estimators import MADTClassifier, PySparkMADTClassifier
 
+FRAC_INFORMATIVE = 0.2
+
+FRAC_REDUNDANT = 0.2
+
 
 def get_datatset(
     n_samples,
@@ -57,13 +61,6 @@ def get_datatset(
     return X, M, y
 
 
-def to_dense(vector):
-    return DenseVector(vector.toArray())
-
-
-to_dense_udf = udf(to_dense, VectorUDT())
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--estimator_alias", type=str, required=True)
@@ -77,7 +74,8 @@ if __name__ == "__main__":
     parser.add_argument("--task_id", type=int, default=None)
     args = parser.parse_args()
 
-    n_informative = n_redundant = int(0.2 * args.n_features)
+    n_informative = int(FRAC_INFORMATIVE * args.n_features)
+    n_redundant = int(FRAC_REDUNDANT * args.n_features)
 
     n_samples = args.n_train + args.n_test
     X, M, y = get_datatset(
@@ -92,16 +90,11 @@ if __name__ == "__main__":
         X, M, y, test_size=args.n_test, random_state=args.seed
     )
 
+    # Perform zero imputation.
     X_train.fillna(0, inplace=True)
     X_test.fillna(0, inplace=True)
 
     if args.estimator_alias == "madt":
-        X_train = X_train.to_numpy()
-        X_test = X_test.to_numpy()
-
-        M_train = M_train.to_numpy()
-        M_test = M_test.to_numpy()
-
         estimator = MADTClassifier(
             max_depth=args.max_depth,
             alpha=args.alpha,
@@ -112,17 +105,19 @@ if __name__ == "__main__":
         estimator.fit(X_train, y_train, M=M_train)
         end_time = time.time()
 
-        test_predictions = estimator.predict(X_test)
+        yp_test = estimator.predict(X_test)
+
+        rho_test = estimator.compute_missingness_reliance(X_test, M_test)
 
     elif args.estimator_alias == "spark_madt":
-        df_train = pd.concat([X_train, M_train, y_train], axis=1)
-        df_test = pd.concat([X_test, M_test, y_test], axis=1)
-
         spark = (
-            SparkSession.builder.appName("DecisionTreeModel")
-            .master("local[*]")
+            SparkSession.builder.appName("DecisionTreeClassifier")
+            .master("local[8]")
             .getOrCreate()
         )
+
+        df_train = pd.concat([X_train, M_train, y_train], axis=1)
+        df_test = pd.concat([X_test, M_test, y_test], axis=1)
 
         df_train = spark.createDataFrame(df_train)
         df_test = spark.createDataFrame(df_test)
@@ -138,19 +133,21 @@ if __name__ == "__main__":
         estimator._fit(df_train)
         end_time = time.time()
 
-        test_predictions = estimator.predict(df_test)
+        yp_test = estimator.predict(df_test)
+
+        rho_test = estimator.compute_missingness_reliance(df_test)
 
         spark.stop()
 
     elif args.estimator_alias == "spark_madt_scala":
-        df_train = pd.concat([X_train, M_train, y_train], axis=1)
-        df_test = pd.concat([X_test, M_test, y_test], axis=1)
-
         spark = (
-            SparkSession.builder.appName("DecisionTreeModel")
-            .master("local[*]")
+            SparkSession.builder.appName("DecisionTreeClassifier")
+            .master("local[8]")
             .getOrCreate()
         )
+
+        df_train = pd.concat([X_train, M_train, y_train], axis=1)
+        df_test = pd.concat([X_test, M_test, y_test], axis=1)
 
         df_train = spark.createDataFrame(df_train)
         df_test = spark.createDataFrame(df_test)
@@ -162,6 +159,7 @@ if __name__ == "__main__":
         df_train = assembler2.transform(df_train)
 
         df_test = assembler1.transform(df_test)
+        df_test = assembler2.transform(df_test)
 
         estimator = DecisionTreeClassifier(
             impurity="gini",
@@ -171,24 +169,27 @@ if __name__ == "__main__":
             labelCol="label",
             missingnessCol="missing",
             alpha=args.alpha,
+            missingnessRelianceCol="rho",
         )
 
         start_time = time.time()
         estimator = estimator.fit(df_train)
         end_time = time.time()
 
-        test_predictions = (
-            estimator.transform(df_test)
-            .select("prediction")
-            .rdd.flatMap(lambda x: x)
-            .collect()
+        df_test = estimator.transform(df_test)
+
+        yp_test = df_test.select("prediction") \
+            .rdd.flatMap(lambda x: x).collect()
+
+        rho_test = np.mean(
+            df_test.select("rho").rdd.flatMap(lambda x: x).collect()
         )
 
         spark.stop()
 
     training_time = end_time - start_time
 
-    accuracy = accuracy_score(y_test, test_predictions)
+    accuracy_test = accuracy_score(y_test, yp_test)
 
     results = pd.Series(
         {
@@ -200,7 +201,8 @@ if __name__ == "__main__":
             "alpha": args.alpha,
             "seed": args.seed,
             "training_time": training_time,
-            "accuracy": accuracy,
+            "accuracy": accuracy_test,
+            "rho": rho_test,
         }
     )
 
