@@ -112,7 +112,8 @@ if __name__ == "__main__":
     elif args.estimator_alias == "spark_madt":
         spark = (
             SparkSession.builder.appName("DecisionTreeClassifier")
-            .master("local[8]")
+            .master("local[*]")
+            .config("spark.driver.memory", "8g")
             .getOrCreate()
         )
 
@@ -142,7 +143,8 @@ if __name__ == "__main__":
     elif args.estimator_alias == "spark_madt_scala":
         spark = (
             SparkSession.builder.appName("DecisionTreeClassifier")
-            .master("local[8]")
+            .master("local[*]")
+            .config("spark.driver.memory", "8g")
             .getOrCreate()
         )
 
