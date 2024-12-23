@@ -60,13 +60,16 @@ def get_datatset(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--estimator_alias", type=str, required=True)
-    parser.add_argument("--n_train", type=int, default=100)
-    parser.add_argument("--n_test", type=int, default=100)
-    parser.add_argument("--n_features", type=int, default=20)
-    parser.add_argument("--max_depth", type=int, default=5)
-    parser.add_argument("--alpha", type=float, default=1.0)
+    parser = argparse.ArgumentParser(description="Fit a MA tree classifier to synthetic data.")
+    parser.add_argument(
+        "--estimator_alias", type=str, required=True,
+        choices=["madt", "spark_madt", "spark_madt_scala"], help="The estimator to fit.",
+    )
+    parser.add_argument("--n_train", type=int, default=100, help="Number of train samples.")
+    parser.add_argument("--n_test", type=int, default=100, help="Number of test samples.")
+    parser.add_argument("--n_features", type=int, default=20, help="Number of features.")
+    parser.add_argument("--max_depth", type=int, default=5, help="The maximum depth of the tree.")
+    parser.add_argument("--alpha", type=float, default=1.0, help="Missingness regularization parameter.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--task_id", type=int, default=None)
