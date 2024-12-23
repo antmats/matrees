@@ -1,0 +1,15 @@
+estimator_alias=madt n_train=1000 n_test=1000 n_features=10 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt n_train=1000 n_test=1000 n_features=10 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt_scala n_train=1000 n_test=1000 n_features=10 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=madt n_train=1000 n_test=1000 n_features=100 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt n_train=1000 n_test=1000 n_features=100 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt_scala n_train=1000 n_test=1000 n_features=100 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=madt n_train=1000 n_test=1000 n_features=1000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt n_train=1000 n_test=1000 n_features=1000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt_scala n_train=1000 n_test=1000 n_features=1000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=madt n_train=1000 n_test=1000 n_features=10000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt n_train=1000 n_test=1000 n_features=10000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt_scala n_train=1000 n_test=1000 n_features=10000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=madt n_train=1000 n_test=1000 n_features=100000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt n_train=1000 n_test=1000 n_features=100000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
+estimator_alias=spark_madt_scala n_train=1000 n_test=1000 n_features=100000 max_depth=4 alpha=1.0 seed=0 output_dir=/proj/healthyai/matrees/results_02
