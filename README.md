@@ -87,7 +87,7 @@ A link to the presentation of the project can be found [here](https://docs.googl
     
 **Anton:**
 -  Brainstormed the approach for implementing MA trees using Apache Spark
--  Implemented te `MADTClassifier`
+-  Implemented the `MADTClassifier`
 -  Implemented the MA trees in Scala by changing the Spark source code
 -  Set up comparison experiment for the implementations
 -  Set up experiment pipeline with synthetic data on HPC cluster
