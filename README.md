@@ -12,7 +12,7 @@ The core idea of this project is to regularize the node-splitting criterion in d
 - [`PySparkMADTClassifier`](https://github.com/antmats/matrees/blob/main/matrees/estimators.py#L373): A Python-based implementation utilizing RDD operations in PySpark.
 - A modified implementation of the Scala [`DecisionTreeClassifier`](https://github.com/antmats/spark/blob/matrees/mllib/src/main/scala/org/apache/spark/ml/classification/DecisionTreeClassifier.scala) class in Spark MLlib, accompanied by a corresponding [Python API](https://github.com/antmats/spark/blob/matrees/python/pyspark/ml/classification.py#L1692).
 
-We compare the different implementations using a synthetic dataset with randomly introduced missing values. Training times are measured for each implementation while varying the number of samples from 100 to 1,000,000, using 20 features. Additionally, we increase the number of features from 10 to 100,000 while keeping the number of samples fixed at 1,000. Finally, we vary the missingness regularization parameter and compare accuracy and missingness reliance across estimators.
+We compare the different implementations using a synthetic dataset with randomly introduced missing values. Training times are measured for each implementation while varying the number of samples from 100 to 1,000,000, using 20 features. Additionally, we increase the number of features from 10 to 100,000 while keeping the number of samples fixed at 1,000. Finally, we vary the missingness regularization parameter and compare accuracy and missingness reliance across implementations. The results of the experiments are presented in the notebook [`results.ipynb`](results.ipynb).
 
 ## Project presentation
 
