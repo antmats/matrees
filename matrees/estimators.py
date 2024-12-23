@@ -28,9 +28,17 @@ from .tree import (
     TreeNode,
     convert_to_sklearn_tree,
 )
-from .missingness_utils import check_missingness_mask
 
 CRITERIA_CLF = {"info_gain": info_gain_scorer, "gini": gini_scorer}
+
+
+def check_missingness_mask(M, X, allow_none=True):
+    if M is None and allow_none:
+        return None
+    M = check_array(M)
+    if not M.shape[0] == X.shape[0]:
+        raise ValueError("The number of samples in X and M must be the same.")
+    return M
 
 
 class BaseMADT(BaseEstimator, metaclass=ABCMeta):
