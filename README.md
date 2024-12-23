@@ -1,4 +1,4 @@
-# Scalable missingess-avoiding decision trees
+# Scalable missingness-avoiding decision trees
 This project was completed as part of the WASP course [Scalable Data Science and Distributed Machine Learning](https://lamastex.github.io/scalable-data-science/sds/3/x/) during the fall 2024 semester. The project was collaboratively developed by two contributors: 
  - **Newton Mwai Kinyanjui**, Data Science and AI Division, CSE Department, Chalmers University of Technology
  - **Anton Matsson**, Data Science and AI Division, CSE Department, Chalmers University of Technology.
