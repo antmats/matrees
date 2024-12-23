@@ -11,8 +11,6 @@ from sklearn.metrics import accuracy_score
 from pyspark.sql import SparkSession
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
-from pyspark.sql.functions import udf, col
-from pyspark.ml.linalg import DenseVector, VectorUDT
 
 from matrees.estimators import MADTClassifier, PySparkMADTClassifier
 

@@ -3,9 +3,8 @@ from abc import ABCMeta, abstractmethod
 from numbers import Integral, Real
 from warnings import warn
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, when, sum as spark_sum, mean, asc
 import numpy as np
+from pyspark.sql.functions import col, lit, when, sum as spark_sum, asc
 
 from sklearn.base import (
     BaseEstimator,
@@ -23,7 +22,12 @@ from sklearn.utils.validation import (
     _check_sample_weight,
 )
 
-from .tree import *
+from .tree import (
+    info_gain_scorer,
+    gini_scorer,
+    TreeNode,
+    convert_to_sklearn_tree,
+)
 from .missingness_utils import check_missingness_mask
 
 CRITERIA_CLF = {"info_gain": info_gain_scorer, "gini": gini_scorer}
@@ -553,67 +557,3 @@ class PySparkMADTClassifier:
                 recurse(node["Right"], depth + 1)
 
         recurse(self.tree_, 0)
-
-
-class PySparkMARFClassifier:
-    """Missingness-avoiding random forest classifier."""
-
-    def __init__(
-        self,
-        numTrees=100,
-        maxDepth=10,
-        alpha=1.0,
-        bootstrap=True,
-        seed=None,
-        criterion="gini",
-        labelCol="label",
-    ):
-        self.numTrees = numTrees
-        self.maxDepth = maxDepth
-        self.alpha = alpha
-        self.bootstrap = bootstrap
-        self.seed = seed
-        self.labelCol = labelCol
-        self.criterion = criterion
-        self.trees = []
-
-    def _fit(self, dataset):
-        """Fit the Random Forest."""
-        self.trees = []
-        for i in range(self.numTrees):
-            sample = dataset.sample(
-                withReplacement=self.bootstrap, fraction=1.0, seed=self.seed
-            )
-            tree = PySparkMADTClassifier(
-                maxDepth=self.maxDepth,
-                criterion=self.criterion,
-                alpha=self.alpha,
-                labelCol=self.labelCol,
-            )
-            tree._fit(sample)
-            self.trees.append(tree)
-
-    def predict(self, dataset):
-        """Predict using majority voting from all trees."""
-        predictions = [tree.predict(dataset) for tree in self.trees]
-        final_predictions = [
-            max(set(preds), key=preds.count) for preds in zip(*predictions)
-        ]
-        return final_predictions
-
-    def compute_missingness_reliance(self, dataset):
-        """Compute average missingness reliance across all trees."""
-        reliance = [tree.compute_missingness_reliance(dataset) for tree in self.trees]
-        return sum(reliance) / len(reliance)
-
-    def print_forest(self):
-        """Print all decision trees in the forest."""
-        for i, tree in enumerate(self.trees):
-            print(f"Tree {i + 1}:")
-            tree.print_tree()
-            print("\n")
-
-    def save(self, path):
-        """Save the Random Forest model."""
-        with open(path, "w") as f:
-            json.dump([tree.tree_ for tree in self.trees], f)

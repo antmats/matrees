@@ -10,12 +10,6 @@ From: continuumio/miniconda3:latest
 
     echo "source activate matrees_env" >> ~/.bashrc
 
-    #conda install --solver=classic \
-    #    conda-forge::conda-libmamba-solver \
-    #    conda-forge::libmamba \
-    #    conda-forge::libmambapy \
-    #    conda-forge::libarchive
-
     conda install -c conda-forge openjdk=11 -y
 
     git clone https://github.com/antmats/spark.git
