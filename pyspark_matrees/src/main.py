@@ -31,10 +31,11 @@ class PySparkMADTClassifier:
 
     def _build_tree(self, dataset, depth):
         """Recursively build the decision tree."""
+        # Stop if we've hit max depth or have no rows left
         if depth >= self.maxDepth or dataset.count() == 0:
             return self._get_leaf(dataset)
 
-        # Check for homogeneity
+        # Check if all samples have the same label
         label_counts = (
             dataset.groupBy(self.labelCol)
             .agg(spark_sum("sample_weight").alias("weight"))
@@ -43,7 +44,7 @@ class PySparkMADTClassifier:
         if len(label_counts) == 1:
             return {"Predict": label_counts[0][self.labelCol]}
 
-        # Find the best split using histogram bins
+        # Find the best split using histogram bins for each feature
         best_feature, best_threshold, best_score = None, None, float("-inf")
         for feature in dataset.columns:
             if feature not in [
@@ -54,10 +55,11 @@ class PySparkMADTClassifier:
                 if score is not None and score > best_score:
                     best_feature, best_threshold, best_score = feature, threshold, score
 
+        # If no split improves the score, return a leaf
         if best_feature is None:
             return self._get_leaf(dataset)
 
-        # Split the dataset
+        # Otherwise, split the dataset
         left_data = dataset.filter(col(best_feature) <= best_threshold)
         right_data = dataset.filter(col(best_feature) > best_threshold)
 
@@ -69,16 +71,29 @@ class PySparkMADTClassifier:
         }
 
     def _best_split(self, dataset, feature):
-        """Find the best split for a feature using histogram bins."""
-        # Missing data penalty
-        missing_penalty = (
+        """
+        Find the best split for a feature using histogram bins, including
+        a missingness penalty proportional to the fraction of samples
+        at this node that are missing this feature.
+        """
+        # Compute node-level missing penalty
+        node_weight = dataset.agg(spark_sum("sample_weight")).collect()[0][0] or 0.0
+        if node_weight == 0:
+            return None, None
+
+        missing_count = (
             dataset.filter(col(f"missing_{feature}") == 1)
             .agg(spark_sum("sample_weight"))
             .collect()[0][0]
-            or 0
-        ) * self.alpha
+            or 0.0
+        )
+        # The fraction of this node that is missing the current feature
+        missing_frac = missing_count / node_weight
 
-        # Create histogram bins
+        # We multiply by alpha to scale how strongly we penalize missingness
+        node_missing_penalty = missing_frac * self.alpha
+
+        # Build histogram bins (unique values sorted)
         histogram = (
             dataset.groupBy(feature)
             .agg(
@@ -88,19 +103,21 @@ class PySparkMADTClassifier:
                 ).alias("positive_weight"),
             )
             .orderBy(asc(feature))
-        ).collect()
+            .collect()
+        )
 
+        # If we don't have at least 2 distinct values, we can't split
         if len(histogram) < 2:
             return None, None
 
-        # Initialize cumulative sums
         total_weight = sum(row["total_weight"] for row in histogram)
         total_positive = sum(row["positive_weight"] for row in histogram)
 
-        weight_left, positive_left = 0, 0
+        weight_left, positive_left = 0.0, 0.0
         best_score, best_threshold = float("-inf"), None
 
-        for i in range(len(histogram) - 1):  # Iterate through bin boundaries
+        # Iterate through histogram bins to find the best threshold
+        for i in range(len(histogram) - 1):
             weight_left += histogram[i]["total_weight"]
             positive_left += histogram[i]["positive_weight"]
 
@@ -110,22 +127,23 @@ class PySparkMADTClassifier:
             if weight_left == 0 or weight_right == 0:
                 continue
 
-            # Calculate Gini impurity for left and right splits
+            # Calculate Gini for left and right
             gini_left = gini_impurity(positive_left, weight_left)
             gini_right = gini_impurity(positive_right, weight_right)
 
-            # Weighted Gini score
-            gini_score = (
-                -(
-                    (weight_left / total_weight) * gini_left
-                    + (weight_right / total_weight) * gini_right
-                )
-                - missing_penalty
-            )
+            # Weighted Gini
+            weighted_gini = (weight_left / total_weight) * gini_left + (
+                weight_right / total_weight
+            ) * gini_right
 
-            # Update the best score and threshold
+            # We define a "score" = -(weighted_gini) - missing penalty
+            # We want to MAXIMIZE this score, i.e. minimize Gini + penalty
+            gini_score = -weighted_gini - node_missing_penalty
+
+            # If this is the best so far, record it
             if gini_score > best_score:
                 best_score = gini_score
+                # The threshold is the midpoint between this bin's value and the next bin's value
                 best_threshold = (histogram[i][feature] + histogram[i + 1][feature]) / 2
 
         return best_score, best_threshold
@@ -146,8 +164,8 @@ class PySparkMADTClassifier:
         def traverse_tree(row, node):
             if "Predict" in node:
                 return node["Predict"]
-            feature, operator, threshold = node["If"].split()
-            threshold = float(threshold)
+            feature, _, threshold_str = node["If"].split()
+            threshold = float(threshold_str)
             if row[feature] <= threshold:
                 return traverse_tree(row, node["Left"])
             else:
@@ -158,24 +176,35 @@ class PySparkMADTClassifier:
         ).collect()
 
     def compute_missingness_reliance(self, dataset):
-        """Compute the proportion of rows influenced by missing features."""
+        """
+        Compute the proportion of rows that traverse a path involving a missing feature
+        (i.e., how often missing_ col influences the path). This is just one example
+        of a 'missingness reliance' metric.
+        """
 
         def traverse_and_check_missing(row, node):
+            # If we're at a leaf, no further checks
             if "Predict" in node:
                 return 0
             feature = node["If"].split()[0]
             is_missing = row.get(f"missing_{feature}", 0)
             if row[feature] is not None:
-                if row[feature] <= float(node["If"].split()[2]):
+                threshold = float(node["If"].split()[2])
+                if row[feature] <= threshold:
                     return is_missing or traverse_and_check_missing(row, node["Left"])
                 else:
                     return is_missing or traverse_and_check_missing(row, node["Right"])
+            # If the value is truly None (somehow) and we missed it, we treat that as missing
             return is_missing
 
         missing_reliance_count = dataset.rdd.map(
             lambda row: traverse_and_check_missing(row.asDict(), self.tree_)
         ).sum()
-        return missing_reliance_count / dataset.count()
+
+        total_count = dataset.count()
+        if total_count == 0:
+            return 0.0
+        return missing_reliance_count / total_count
 
     def save(self, path):
         """Save the trained model."""
@@ -221,7 +250,7 @@ class PySparkMARFClassifier:
         self.trees = []
 
     def _fit(self, dataset):
-        """Fit the Random Forest."""
+        """Fit the Random Forest by training multiple MADT trees on bootstrap samples."""
         self.trees = []
         for i in range(self.numTrees):
             sample = dataset.sample(
@@ -238,36 +267,48 @@ class PySparkMARFClassifier:
 
     def predict(self, dataset):
         """Predict using majority voting from all trees."""
-        predictions = [tree.predict(dataset) for tree in self.trees]
-        final_predictions = [
-            max(set(preds), key=preds.count) for preds in zip(*predictions)
-        ]
+        # Each tree returns a list of predictions
+        predictions_per_tree = [tree.predict(dataset) for tree in self.trees]
+        # Transpose to get predictions for each row across all trees
+        final_predictions = []
+        for row_preds in zip(*predictions_per_tree):
+            # Majority vote
+            pred = max(set(row_preds), key=row_preds.count)
+            final_predictions.append(pred)
         return final_predictions
 
     def compute_missingness_reliance(self, dataset):
         """Compute average missingness reliance across all trees."""
-        reliance = [tree.compute_missingness_reliance(dataset) for tree in self.trees]
-        return sum(reliance) / len(reliance)
+        if not self.trees:
+            return 0.0
+        reliances = [tree.compute_missingness_reliance(dataset) for tree in self.trees]
+        return sum(reliances) / len(reliances)
 
     def print_forest(self):
         """Print all decision trees in the forest."""
         for i, tree in enumerate(self.trees):
             print(f"Tree {i + 1}:")
             tree.print_tree()
-            print("\n")
+            print()
 
     def save(self, path):
-        """Save the Random Forest model."""
+        """Save the Random Forest model as JSON."""
         with open(path, "w") as f:
             json.dump([tree.tree_ for tree in self.trees], f)
 
 
 if __name__ == "__main__":
-    spark = SparkSession.builder.appName("HistogramBasedDecisionTree").getOrCreate()
+    spark = SparkSession.builder.appName(
+        "MissingnessAvoidingDecisionTree"
+    ).getOrCreate()
 
     # Load Dataset
     data_path = "./src/data/sample_data.csv"
     df = spark.read.csv(data_path, header=True, inferSchema=True)
+
+    # Make sure label is numeric, e.g., 0/1.
+    # If 'credit_approved' column is string "yes"/"no", map it to 1/0 first.
+    # df = df.withColumn("credit_approved", when(col("credit_approved") == "yes", 1).otherwise(0))
 
     # Define features and label
     features = ["credit_age", "income", "full_time", "part_time", "student"]
@@ -275,18 +316,27 @@ if __name__ == "__main__":
 
     # Add Missingness Mask and Impute Missing Values
     for feature in features:
+        # Create a missing_ column
         df = df.withColumn(
             f"missing_{feature}", when(col(feature).isNull(), 1.0).otherwise(0.0)
         )
+        # Impute with mean
         mean_value = df.select(mean(col(feature))).first()[0]
         df = df.withColumn(
             feature,
             when(col(feature).isNull(), lit(mean_value)).otherwise(col(feature)),
         )
 
-    # Train PySparkMADTClassifier
+    # Split into train/test to avoid overfitting:
+    # train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+    # For brevity, we’ll just use the entire df as training here.
+
+    # Train a single decision tree
     madt = PySparkMADTClassifier(
-        criterion="gini", maxDepth=3, alpha=0.1, labelCol=label
+        criterion="gini",
+        maxDepth=3,
+        alpha=0.1,  # Lower alpha if you still find the penalty too strong
+        labelCol=label,
     )
     madt._fit(df)
     print("Trained MADT Tree:")
@@ -300,10 +350,10 @@ if __name__ == "__main__":
     reliance = madt.compute_missingness_reliance(df)
     print(f"Missingness reliance: {reliance:.4f}")
 
-    # Save Model
+    # Save single-tree model
     madt.save("./src/models/madt_model.json")
 
-    # Train PySparkMARFClassifier
+    # Train a random forest of 3 trees
     marf = PySparkMARFClassifier(numTrees=3, maxDepth=3, alpha=0.1, labelCol=label)
     marf._fit(df)
     print("Trained MARF Forest:")
@@ -317,6 +367,7 @@ if __name__ == "__main__":
     forest_reliance = marf.compute_missingness_reliance(df)
     print(f"Missingness reliance for MARF: {forest_reliance:.4f}")
 
+    # Save the entire forest
     marf.save("./src/models/marf_model")
 
     spark.stop()
